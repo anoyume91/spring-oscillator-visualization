@@ -1,5 +1,5 @@
 Spring Oscillator – Hooke’s Law Visualization
-
+Live Demo: https://anoyume91.github.io/pendulum-visual-controller/
 An interactive physics-based spring–mass system demonstrating Hooke’s Law (F = –kx) with multiple analytical and artistic visualization modes.
 This project explores how mathematical models can produce visual and dynamic behaviour when mapped onto real-time graphics.
 

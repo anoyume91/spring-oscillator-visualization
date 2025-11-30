@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spring Oscillator - Hooke's Law Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: 'Monaco', 'Courier New', monospace;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #00ff88;
+            font-size: 12px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #00ff88;
+        }
+        #physics-display {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: #00ffff;
+            font-size: 11px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #00ffff;
+            font-family: 'Monaco', monospace;
+        }
+        .equation {
+            color: #ffaa00;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <strong>SPRING OSCILLATOR - Hooke's Law F = -kx</strong><br><br>
+        🖱️ Click & drag the mass to displace<br>
+        ⌨️ SPACE: Change visual mode (4 modes)<br>
+        ⌨️ D: Toggle damping on/off<br>
+        ⌨️ R: Reset spring to equilibrium<br>
+        ⌨️ F: Add external driving force<br>
+        🎹 1-5: Change spring stiffness (k)<br>
+        📜 Scroll: Adjust mass value
+    </div>
+    <div id="physics-display">
+        <strong>PHYSICS STATE</strong><br>
+        <div id="physics-values"></div>
+    </div>
+    <script>
+// ===== SPRING OSCILLATOR WITH HOOKE'S LAW =====
+// Interactive spring system demonstrating F = -kx with artistic visualizations
+
+// Spring system properties (using real physics units conceptually)
+let spring = {
+    // Physical properties
+    k: 0.1,                    // Spring constant (stiffness)
+    mass: 2.0,                 // Mass of the object
+    restLength: 200,           // Natural length of spring
+    
+    // State variables
+    position: 0,               // Displacement from equilibrium
+    velocity: 0,               // Current velocity
+    acceleration: 0,           // Current acceleration
+    
+    // Damping and driving
+    damping: 0.02,            // Damping coefficient (b in F = -bv)
+    isDamped: true,           // Toggle damping
+    
+    // External driving force
+    drivingForce: 0,          // External periodic force
+    drivingFreq: 0,           // Driving frequency
+    drivingPhase: 0,          // Phase of driving force
+    
+    // Visual properties
+    massRadius: 25,           // Visual size of mass
+    isDragging: false,        // Mouse interaction
+    
+    // Position in space
+    anchorX: 0,               // Fixed end position
+    anchorY: 0,               // Fixed end position
+    orientation: 0            // 0 = vertical, PI/2 = horizontal
+};
+
+// Visual control system
+let visual = {
+    mode: 0,                  // Visual style (0-3)
+    modeNames: [
+        "Wave Propagation",
+        "Phase Space Portrait", 
+        "Energy Landscape",
+        "Quantum Probability Cloud"
+    ],
+    
+    // Trail and history
+    positionHistory: [],      // Store past positions
+    maxHistory: 200,          // Maximum trail points
+    
+    // Wave visualization
+    wavePoints: [],           // Points for wave drawing
+    waveResolution: 100,      // Number of wave points
+    
+    // Phase space
+    phaseTrail: [],          // Phase space trajectory
+    maxPhasePoints: 500,     // Max phase trail length
+    
+    // Energy visualization
+    potentialEnergy: 0,      // U = 1/2 * k * x²
+    kineticEnergy: 0,        // K = 1/2 * m * v²
+    totalEnergy: 0,          // E = U + K
+    
+    // Particles for quantum mode
+    particles: [],           // Probability cloud particles
+    particleCount: 300       // Number of particles
+};
+
+// Scientific data
+let physics = {
+    time: 0,                 // Time counter
+    period: 0,               // Oscillation period T = 2π√(m/k)
+    frequency: 0,            // Natural frequency ω = √(k/m)
+    amplitude: 0,            // Maximum displacement
+    phase: 0                 // Current phase
+};
+
+function setup() {
+    createCanvas(windowWidth, windowHeight);
+    colorMode(HSB, 360, 100, 100, 100);
+    
+    // Set spring anchor point
+    spring.anchorX = width / 2;
+    spring.anchorY = height * 0.2;
+    
+    // Calculate natural frequency
+    updatePhysicsParameters();
+    
+    // Initialize visualization arrays
+    initializeVisualElements();
+}
+
+function draw() {
+    // Dynamic background
+    if (visual.mode === 1) {
+        // Phase space needs persistent trails
+        background(0, 0, 5, 5);
+    } else {
+        background(0, 0, 5, 40);
+    }
+    
+    // Update spring physics using Hooke's Law
+    updateSpringPhysics();
+    
+    // Update physics calculations
+    calculatePhysicsData();
+    
+    // Draw visualization based on mode
+    drawVisualization();
+    
+    // Draw the spring system
+    drawSpringSystem();
+    
+    // Update physics display
+    updatePhysicsDisplay();
+    
+    // Increment time
+    physics.time += 0.016; // ~60 FPS
+}
+
+// ===== HOOKE'S LAW PHYSICS ENGINE =====
+function updateSpringPhysics() {
+    if (!spring.isDragging) {
+        // HOOKE'S LAW: F = -kx
+        let springForce = -spring.k * spring.position;
+        
+        // Add damping force: F_damping = -bv
+        let dampingForce = 0;
+        if (spring.isDamped) {
+            dampingForce = -spring.damping * spring.velocity;
+        }
+        
+        // Add external driving force: F_drive = F₀cos(ωt)
+        let drivingForce = spring.drivingForce * cos(spring.drivingFreq * physics.time + spring.drivingPhase);
+        
+        // Total force: F_total = F_spring + F_damping + F_driving
+        let totalForce = springForce + dampingForce + drivingForce;
+        
+        // Newton's Second Law: F = ma, so a = F/m
+        spring.acceleration = totalForce / spring.mass;
+        
+        // Update velocity and position using Euler method
+        spring.velocity += spring.acceleration;
+        spring.position += spring.velocity;
+        
+        // Store position history
+        visual.positionHistory.push(spring.position);
+        if (visual.positionHistory.length > visual.maxHistory) {
+            visual.positionHistory.shift();
+        }
+        
+        // Update phase space
+        visual.phaseTrail.push({
+            x: spring.position,
+            v: spring.velocity,
+            energy: 0.5 * spring.k * spring.position * spring.position
+        });
+        if (visual.phaseTrail.length > visual.maxPhasePoints) {
+            visual.phaseTrail.shift();
+        }
+    }
+}
+
+// ===== PHYSICS CALCULATIONS =====
+function calculatePhysicsData() {
+    // Natural frequency: ω = √(k/m)
+    physics.frequency = sqrt(spring.k / spring.mass);
+    
+    // Period: T = 2π/ω
+    physics.period = TWO_PI / physics.frequency;
+    
+    // Current amplitude (maximum recent displacement)
+    physics.amplitude = max(abs(spring.position), physics.amplitude * 0.995);
+    
+    // Phase: φ = arctan(v/(ωx))
+    if (spring.position !== 0) {
+        physics.phase = atan2(spring.velocity, physics.frequency * spring.position);
+    }
+    
+    // Energy calculations
+    visual.potentialEnergy = 0.5 * spring.k * spring.position * spring.position;
+    visual.kineticEnergy = 0.5 * spring.mass * spring.velocity * spring.velocity;
+    visual.totalEnergy = visual.potentialEnergy + visual.kineticEnergy;
+}
+
+// ===== SPRING SYSTEM RENDERING =====
+function drawSpringSystem() {
+    push();
+    translate(spring.anchorX, spring.anchorY);
+    
+    // Calculate mass position
+    let massY = spring.restLength + spring.position;
+    
+    // Draw the spring coil
+    drawSpringCoil(0, 0, 0, massY);
+    
+    // Draw the mass with glow effect
+    drawMass(0, massY);
+    
+    // Draw anchor point
+    noStroke();
+    fill(180, 50, 80);
+    rect(-30, -10, 60, 10);
+    
+    pop();
+}
+
+// ===== SPRING COIL VISUALIZATION =====
+function drawSpringCoil(x1, y1, x2, y2) {
+    let coils = 15;
+    let coilWidth = 20;
+    
+    stroke(120, 60, 80, 60);
+    strokeWeight(2);
+    noFill();
+    
+    beginShape();
+    for (let i = 0; i <= coils; i++) {
+        let t = i / coils;
+        let y = lerp(y1, y2, t);
+        
+        // Create coil effect
+        let offset = sin(t * TWO_PI * coils) * coilWidth;
+        
+        // Compress/stretch coils based on displacement
+        let compressionFactor = map(spring.position, -100, 100, 0.5, 1.5);
+        offset *= compressionFactor;
+        
+        vertex(x1 + offset, y);
+    }
+    endShape();
+}
+
+// ===== MASS RENDERING =====
+function drawMass(x, y) {
+    // Outer glow layers
+    for (let i = 3; i > 0; i--) {
+        let alpha = map(abs(spring.velocity), 0, 10, 5, 20);
+        fill(200, 70, 100, alpha);
+        ellipse(x, y, spring.massRadius * (1 + i * 0.4));
+    }
+    
+    // Inner mass
+    let hue = map(visual.totalEnergy, 0, 50, 180, 0);
+    fill(hue, 80, 100);
+    ellipse(x, y, spring.massRadius * 2);
+    
+    // Energy indicator
+    if (visual.totalEnergy > 1) {
+        stroke(hue, 100, 100, 50);
+        strokeWeight(2);
+        noFill();
+        ellipse(x, y, spring.massRadius * 2.5);
+    }
+}
+
+// ===== VISUALIZATION MODES =====
+function drawVisualization() {
+    push();
+    
+    switch(visual.mode) {
+        case 0:
+            drawWavePropagation();
+            break;
+        case 1:
+            drawPhaseSpacePortrait();
+            break;
+        case 2:
+            drawEnergyLandscape();
+            break;
+        case 3:
+            drawQuantumProbabilityCloud();
+            break;
+    }
+    
+    pop();
+}
+
+// ===== MODE 0: WAVE PROPAGATION =====
+function drawWavePropagation() {
+    // Create wave that propagates from the spring
+    strokeWeight(2);
+    noFill();
+    
+    // Primary wave
+    for (let layer = 0; layer < 3; layer++) {
+        beginShape();
+        for (let x = 0; x < width; x += 5) {
+            // Wave equation: y = A * sin(kx - ωt + φ)
+            let waveNumber = 0.02;
+            let y = height * 0.6;
+            
+            // Add spring displacement influence
+            let influence = exp(-abs(x - spring.anchorX) / 200);
+            y += spring.position * influence * sin(waveNumber * x - physics.frequency * physics.time + layer * PI/3);
+            
+            // Secondary harmonics
+            y += spring.position * 0.3 * sin(waveNumber * 2 * x - physics.frequency * 2 * physics.time);
+            
+            // Color based on energy and position
+            let hue = (200 + spring.position * 0.5 + layer * 40) % 360;
+            let brightness = map(abs(spring.velocity), 0, 10, 40, 100);
+            stroke(hue, 70, brightness, 60 - layer * 15);
+            
+            vertex(x, y);
+        }
+        endShape();
+    }
+    
+    // Standing wave pattern
+    if (abs(spring.velocity) > 0.5) {
+        for (let x = 0; x < width; x += 20) {
+            let standing = sin(0.01 * x) * cos(physics.frequency * physics.time);
+            let y = height * 0.6 + standing * spring.position;
+            
+            let size = abs(standing) * 5;
+            fill(180, 50, 80, 30);
+            noStroke();
+            ellipse(x, y, size);
+        }
+    }
+}
+
+// ===== MODE 1: PHASE SPACE PORTRAIT =====
+function drawPhaseSpacePortrait() {
+    push();
+    translate(width / 2, height * 0.6);
+    
+    // Draw axes
+    stroke(0, 0, 40, 50);
+    strokeWeight(1);
+    line(-width/3, 0, width/3, 0);
+    line(0, -height/3, 0, height/3);
+    
+    // Draw energy contours
+    noFill();
+    for (let e = 10; e <= 100; e += 20) {
+        stroke(120, 30, 60, 20);
+        // Energy ellipse: x²/2E/k + v²/2E/m = 1
+        let a = sqrt(2 * e / spring.k) * 5;
+        let b = sqrt(2 * e / spring.mass) * 5;
+        ellipse(0, 0, a * 2, b * 2);
+    }
+    
+    // Draw phase trajectory
+    strokeWeight(2);
+    noFill();
+    beginShape();
+    for (let i = 0; i < visual.phaseTrail.length; i++) {
+        let point = visual.phaseTrail[i];
+        let alpha = map(i, 0, visual.phaseTrail.length, 10, 100);
+        let hue = map(point.energy, 0, 50, 240, 0);
+        
+        stroke(hue, 80, 100, alpha);
+        vertex(point.x * 5, -point.v * 50);
+    }
+    endShape();
+    
+    // Current position marker
+    fill(0, 100, 100);
+    noStroke();
+    ellipse(spring.position * 5, -spring.velocity * 50, 10);
+    
+    // Draw attractor (equilibrium point)
+    if (spring.isDamped) {
+        stroke(120, 100, 100, 50);
+        strokeWeight(1);
+        for (let i = 1; i < 4; i++) {
+            noFill();
+            ellipse(0, 0, i * 20);
+        }
+    }
+    
+    pop();
+}
+
+// ===== MODE 2: ENERGY LANDSCAPE =====
+function drawEnergyLandscape() {
+    push();
+    translate(0, height * 0.7);
+    
+    // Draw potential energy curve: U = 1/2 * k * x²
+    stroke(280, 70, 80, 60);
+    strokeWeight(3);
+    noFill();
+    beginShape();
+    for (let x = 0; x < width; x += 5) {
+        let displacement = (x - width/2) / 5;
+        let potential = 0.5 * spring.k * displacement * displacement;
+        let y = -potential * 2;
+        vertex(x, y);
+    }
+    endShape();
+    
+    // Draw energy levels
+    let totalHeight = -visual.totalEnergy * 2;
+    stroke(60, 70, 100, 50);
+    strokeWeight(1);
+    line(0, totalHeight, width, totalHeight);
+    
+    // Kinetic energy region (shaded)
+    fill(120, 50, 80, 20);
+    noStroke();
+    beginShape();
+    vertex(0, totalHeight);
+    for (let x = 0; x < width; x += 10) {
+        let displacement = (x - width/2) / 5;
+        let potential = 0.5 * spring.k * displacement * displacement;
+        let y = -potential * 2;
+        vertex(x, y);
+    }
+    vertex(width, totalHeight);
+    endShape(CLOSE);
+    
+    // Current position ball
+    let ballX = width/2 + spring.position * 5;
+    let ballY = -visual.potentialEnergy * 2;
+    
+    // Ball with energy glow
+    for (let i = 3; i > 0; i--) {
+        fill(30, 80, 100, 20);
+        ellipse(ballX, ballY, 10 + i * 10);
+    }
+    fill(30, 100, 100);
+    ellipse(ballX, ballY, 10);
+    
+    // Velocity vector
+    stroke(0, 100, 100, 80);
+    strokeWeight(2);
+    line(ballX, ballY, ballX + spring.velocity * 20, ballY);
+    
+    // Energy bars
+    let barX = 50;
+    let barWidth = 30;
+    let maxHeight = 200;
+    
+    // Potential energy bar
+    fill(280, 70, 80, 60);
+    rect(barX, -visual.potentialEnergy * 4, barWidth, visual.potentialEnergy * 4);
+    
+    // Kinetic energy bar
+    fill(120, 70, 80, 60);
+    rect(barX + 40, -visual.kineticEnergy * 4, barWidth, visual.kineticEnergy * 4);
+    
+    pop();
+}
+
+// ===== MODE 3: QUANTUM PROBABILITY CLOUD =====
+function drawQuantumProbabilityCloud() {
+    // Simulate quantum harmonic oscillator probability distribution
+    push();
+    translate(spring.anchorX, spring.anchorY + spring.restLength);
+    
+    // Update particle positions based on wavefunction
+    for (let particle of visual.particles) {
+        // Gaussian distribution centered on classical position
+        let sigma = 30 + abs(spring.velocity) * 5;
+        let randomOffset = randomGaussian(spring.position, sigma);
+        
+        particle.x = randomOffset;
+        particle.y = randomGaussian(0, sigma/2);
+        particle.phase += 0.05;
+        
+        // Quantum tunneling effect - particles beyond classical limits
+        if (abs(particle.x) > physics.amplitude * 5) {
+            particle.alpha = map(abs(particle.x), physics.amplitude * 5, physics.amplitude * 10, 50, 0);
+        } else {
+            particle.alpha = 100;
+        }
+    }
+    
+    // Draw probability cloud
+    noStroke();
+    for (let particle of visual.particles) {
+        let hue = (200 + particle.phase * 50) % 360;
+        let size = 2 + sin(particle.phase) * 1;
+        
+        fill(hue, 60, 100, particle.alpha * 0.3);
+        ellipse(particle.x, particle.y, size);
+    }
+    
+    // Draw wavefunction envelope
+    stroke(180, 60, 100, 40);
+    strokeWeight(1);
+    noFill();
+    
+    // Ground state wavefunction: ψ₀ ∝ exp(-mωx²/2ħ)
+    beginShape();
+    for (let x = -200; x <= 200; x += 5) {
+        let psi = exp(-spring.k * x * x / (100 * (1 + abs(spring.velocity))));
+        let y = -psi * 100;
+        vertex(x, y);
+    }
+    endShape();
+    
+    // Energy level indicators
+    let n = floor(visual.totalEnergy / 5);
+    for (let i = 0; i <= n; i++) {
+        let levelY = -150 + i * 20;
+        stroke(60, 100, 80, 30);
+        line(-100, levelY, 100, levelY);
+        
+        // Label
+        fill(60, 100, 80, 50);
+        noStroke();
+        textAlign(RIGHT);
+        textSize(10);
+        text("n=" + i, -110, levelY + 4);
+    }
+    
+    pop();
+}
+
+// ===== INITIALIZE VISUAL ELEMENTS =====
+function initializeVisualElements() {
+    // Initialize quantum particles
+    for (let i = 0; i < visual.particleCount; i++) {
+        visual.particles.push({
+            x: 0,
+            y: 0,
+            phase: random(TWO_PI),
+            alpha: 100
+        });
+    }
+}
+
+// ===== PHYSICS PARAMETER UPDATES =====
+function updatePhysicsParameters() {
+    physics.frequency = sqrt(spring.k / spring.mass);
+    physics.period = TWO_PI / physics.frequency;
+}
+
+// ===== PHYSICS DISPLAY UPDATE =====
+function updatePhysicsDisplay() {
+    let display = `
+        <div class="equation">F = -kx ${spring.isDamped ? '- bv' : ''}</div>
+        <div>Position: ${spring.position.toFixed(2)}</div>
+        <div>Velocity: ${spring.velocity.toFixed(2)}</div>
+        <div>Spring k: ${spring.k.toFixed(3)}</div>
+        <div>Mass m: ${spring.mass.toFixed(1)}</div>
+        <div>ω₀: ${physics.frequency.toFixed(3)} rad/s</div>
+        <div>Period T: ${physics.period.toFixed(2)} s</div>
+        <div class="equation">E = ${visual.totalEnergy.toFixed(2)}</div>
+        <div>PE: ${visual.potentialEnergy.toFixed(2)}</div>
+        <div>KE: ${visual.kineticEnergy.toFixed(2)}</div>
+        <div>Mode: ${visual.modeNames[visual.mode]}</div>
+    `;
+    
+    document.getElementById('physics-values').innerHTML = display;
+}
+
+// ===== MOUSE INTERACTION =====
+function mousePressed() {
+    // Check if clicking on the mass
+    let massX = spring.anchorX;
+    let massY = spring.anchorY + spring.restLength + spring.position;
+    
+    let d = dist(mouseX, mouseY, massX, massY);
+    if (d < spring.massRadius * 2) {
+        spring.isDragging = true;
+        spring.velocity = 0;
+    }
+}
+
+function mouseReleased() {
+    spring.isDragging = false;
+}
+
+function mouseDragged() {
+    if (spring.isDragging) {
+        // Update position based on mouse
+        spring.position = mouseY - spring.anchorY - spring.restLength;
+        spring.position = constrain(spring.position, -150, 150);
+        spring.velocity = 0;
+    }
+}
+
+// ===== KEYBOARD CONTROLS =====
+function keyPressed() {
+    if (key === ' ') {
+        // Change visualization mode
+        visual.mode = (visual.mode + 1) % 4;
+        
+        // Clear trails when switching
+        visual.phaseTrail = [];
+        visual.positionHistory = [];
+        
+    } else if (key === 'd' || key === 'D') {
+        // Toggle damping
+        spring.isDamped = !spring.isDamped;
+        
+    } else if (key === 'r' || key === 'R') {
+        // Reset to equilibrium
+        spring.position = 0;
+        spring.velocity = 0;
+        spring.acceleration = 0;
+        visual.phaseTrail = [];
+        physics.amplitude = 0;
+        
+    } else if (key === 'f' || key === 'F') {
+        // Add driving force
+        if (spring.drivingForce === 0) {
+            spring.drivingForce = 0.5;
+            spring.drivingFreq = physics.frequency * 0.9; // Near resonance
+        } else {
+            spring.drivingForce = 0;
+        }
+        
+    } else if (key >= '1' && key <= '5') {
+        // Change spring stiffness
+        spring.k = map(parseInt(key), 1, 5, 0.05, 0.3);
+        updatePhysicsParameters();
+    }
+}
+
+// ===== MOUSE WHEEL FOR MASS ADJUSTMENT =====
+function mouseWheel(event) {
+    spring.mass += event.delta * 0.01;
+    spring.mass = constrain(spring.mass, 0.5, 10);
+    updatePhysicsParameters();
+    return false;
+}
+
+// ===== WINDOW RESIZE =====
+function windowResized() {
+    resizeCanvas(windowWidth, windowHeight);
+    spring.anchorX = width / 2;
+    spring.anchorY = height * 0.2;
+}
+    </script>
+</body>
+</html>

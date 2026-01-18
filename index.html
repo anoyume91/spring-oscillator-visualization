@@ -172,7 +172,6 @@ function draw() {
     physics.time += 0.016; // ~60 FPS
 }
 
-// ===== HOOKE'S LAW PHYSICS ENGINE =====
 function updateSpringPhysics() {
     if (!spring.isDragging) {
         // HOOKE'S LAW: F = -kx
@@ -215,7 +214,6 @@ function updateSpringPhysics() {
     }
 }
 
-// ===== PHYSICS CALCULATIONS =====
 function calculatePhysicsData() {
     // Natural frequency: ω = √(k/m)
     physics.frequency = sqrt(spring.k / spring.mass);
@@ -237,7 +235,6 @@ function calculatePhysicsData() {
     visual.totalEnergy = visual.potentialEnergy + visual.kineticEnergy;
 }
 
-// ===== SPRING SYSTEM RENDERING =====
 function drawSpringSystem() {
     push();
     translate(spring.anchorX, spring.anchorY);
@@ -259,7 +256,6 @@ function drawSpringSystem() {
     pop();
 }
 
-// ===== SPRING COIL VISUALIZATION =====
 function drawSpringCoil(x1, y1, x2, y2) {
     let coils = 15;
     let coilWidth = 20;
@@ -285,7 +281,6 @@ function drawSpringCoil(x1, y1, x2, y2) {
     endShape();
 }
 
-// ===== MASS RENDERING =====
 function drawMass(x, y) {
     // Outer glow layers
     for (let i = 3; i > 0; i--) {
@@ -428,7 +423,6 @@ function drawPhaseSpacePortrait() {
     pop();
 }
 
-// ===== MODE 2: ENERGY LANDSCAPE =====
 function drawEnergyLandscape() {
     push();
     translate(0, height * 0.7);
